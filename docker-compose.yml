@@ -1,0 +1,54 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bankbangna}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?ต้องตั้งค่าใน .env}
+      POSTGRES_DB: ${POSTGRES_DB:-bankbangna}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./deploy/backup:/backup
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bankbangna}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    # ไม่ publish port ออกนอกเครื่อง — เข้าถึงได้เฉพาะจาก container อื่น
+
+  api:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-bankbangna}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-bankbangna}
+      JWT_SECRET: ${JWT_SECRET:?ต้องตั้งค่าใน .env}
+      COOKIE_SECURE: "true"
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      QUOTE_RATE_LIMIT_PER_HOUR: ${QUOTE_RATE_LIMIT_PER_HOUR:-30}
+      EXCHANGE_RATE_MAX_AGE_HOURS: ${EXCHANGE_RATE_MAX_AGE_HOURS:-48}
+    expose:
+      - "8000"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [api]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?ต้องตั้งค่าใน .env เช่น app.bankbangna.com}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
